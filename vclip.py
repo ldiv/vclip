@@ -32,6 +32,8 @@ def ffmpeg_merge_clips(clips, output_path):
     return proc
 
 
+# Generates argument string for filter parameter in the ffmpeg command to merge clips
+#   This is generated dynamically because it depends on the number of clips being merged
 def generate_filter_param(number_of_clips):
     parameter = []
     template1 = "[{}:v:0] [{}:a:0]"
@@ -77,6 +79,12 @@ class TimePoint:
     def __gt__(self, other_time_point):
         return self.convert_to_seconds() > other_time_point.convert_to_seconds()
 
+    def __le__(self, other_time_point):
+        return self.convert_to_seconds() <= other_time_point.convert_to_seconds()
+
+    def __ge__(self, other_time_point):
+        return self.convert_to_seconds() >= other_time_point.convert_to_seconds()
+
     def __eq__(self, other_time_point):
         return self.convert_to_seconds() == other_time_point.convert_to_seconds()
 
@@ -106,7 +114,6 @@ class TimeInterval:
 
         self.start_time = TimePoint(start_time)
         if end_time == "end":
-            print("are we getting here? {}".format(end_time))
             self.end_time = TimePointEnd()
         else:
             self.end_time = TimePoint(end_time)
@@ -117,8 +124,15 @@ class TimeInterval:
 
 # Ensure that intervals do not overlap
 def validate_intervals(intervals):
-    #TODO
-    pass
+    if intervals:
+        current_interval_index = 0
+        while current_interval_index < len(intervals)-1:
+            current_end = intervals[current_interval_index].end_time
+            next_start = intervals[current_interval_index+1].start_time
+            print("VALIDATING {} {}".format(current_end, next_start))
+            if current_end >= next_start:
+                raise InvalidTimeIntervalException("Time intervals overlap")
+            current_interval_index += 1
 
 
 def read_proc_stdout(proc, message=None):
@@ -133,7 +147,10 @@ def read_proc_stdout(proc, message=None):
 
 def clip_video(filename, intervals, output_path):
     intervals = [TimeInterval(interval_string) for interval_string in intervals]
+    # Sort by start time to ensure intervals are in chronological order
+    intervals = sorted(intervals, key=lambda t: t.start_time.convert_to_seconds())
     print("Intervals to clip {}".format(intervals))
+    validate_intervals(intervals)
     tmpdir = tempfile.TemporaryDirectory()
     clips = []
     for i, interval in enumerate(intervals):
@@ -182,6 +199,7 @@ def process_arguments(args):
         print(display_usage())
         return False
     if args.interval_file and args.intervals:
+        #TODO: pick one to override and just print a warning
         print("Can only accept time interval parameters via command line arguments or file, not both")
         print(display_usage())
         return False
@@ -204,7 +222,10 @@ def create_arg_parser():
     arg_parser.add_argument("input_file", help="video file to clip")
     arg_parser.add_argument("-i", "--intervals", nargs="*",
                             help="intervals [HH:]MM:SS-[HH:]MM:SS [[HH:]MM:SS-[HH:]MM:SS]")
-    arg_parser.add_argument("-f", "--interval_file", help="file containing one interval per line")
+    arg_parser.add_argument("-f", "--interval_file",
+                            help="file containing one interval per line")
+    arg_parser.add_argument("-o", "--output_file",
+                            help="file path for the resulting video file")
     return arg_parser
 
 
